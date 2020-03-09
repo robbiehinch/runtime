@@ -69,9 +69,35 @@ if [ ! -z ${RunCrossGen2+x} ]%3B then
         TakeLock
         if [ ! -f $(MSBuildProjectName).org ]%3B then
           mkdir IL
-          cp $(MSBuildProjectName).dll IL/$(MSBuildProjectName).dll
+          if [ ! -z ${CompositeBuildMode+x} ]%3B then
+            cp *.dll IL/
+          else
+            cp $(MSBuildProjectName).dll IL/
+          fi
           mv $(MSBuildProjectName).dll $(MSBuildProjectName).org
-          __Command=$_DebuggerFullPath "$CORE_ROOT/corerun" "$CORE_ROOT/crossgen2/crossgen2.dll" -r:$CORE_ROOT/System.*.dll -r:$CORE_ROOT/Microsoft.*.dll -r:$CORE_ROOT/mscorlib.dll -r:$PWD/*.dll --targetarch=x64 -O --inputbubble $ExtraCrossGen2Args -o:$(scriptPath)$(MSBuildProjectName).dll $(scriptPath)$(MSBuildProjectName).org
+          __Command=$_DebuggerFullPath
+          __Command+=" $CORE_ROOT/corerun"
+          __Command+=" $CORE_ROOT/crossgen2/crossgen2.dll"
+          if [ ! -z ${CompositeBuildMode+x} ]%3B then
+            __ReferenceOption=-u
+            __Command+=" --composite"
+            __Command+=" -o:$(scriptPath)composite-r2r.dll"
+            __Command+=" $PWD/IL/*.dll"
+            cp $CORE_ROOT/lib*.so $CORE_ROOT/lib*.dylib $(scriptPath)
+          else
+            __ReferenceOption=-r
+            __Command+=" -o:$(scriptPath)$(MSBuildProjectName).dll"
+            __Command+=" -r:$PWD/IL/*.dll"
+          fi
+          __Command+=" $__ReferenceOption:$CORE_ROOT/System.*.dll"
+          __Command+=" $__ReferenceOption:$CORE_ROOT/Microsoft.*.dll"
+          __Command+=" $__ReferenceOption:$CORE_ROOT/mscorlib.dll"
+          __Command+=" $__ReferenceOption:$CORE_ROOT/netstandard.dll"
+          __Command+=" --targetarch=x64"
+          __Command+=" -O"
+          __Command+=" --inputbubble"
+          __Command+=" $ExtraCrossGen2Args"
+          __Command+=" $(scriptPath)$(MSBuildProjectName).org"
           echo $__Command
           $__Command
           __cg2ExitCode=$?
@@ -129,10 +155,37 @@ if defined RunCrossGen2 (
         set CrossGen2Status=0
         if not exist "$(MSBuildProjectName).org" (
             mkdir IL
-            copy $(MSBuildProjectName).dll IL\$(MSBuildProjectName).dll
-            ren $(MSBuildProjectName).dll $(MSBuildProjectName).org
-            set __Command=!_DebuggerFullPath! "!CORE_ROOT!\CoreRun.exe" "!CORE_ROOT!\crossgen2\crossgen2.dll" %21scriptPath%21$(MSBuildProjectName).org -o:%21scriptPath%21$(MSBuildProjectName).dll --targetarch:x64 -O --inputbubble %21ExtraCrossGen2Args%21 -r:"!CORE_ROOT!\System.*.dll" -r:"!CORE_ROOT!\Microsoft.*.dll" -r:"!CORE_ROOT!\mscorlib.dll" -r:%25cd%25\*.dll
-            echo "!__Command!"
+            if defined CompositeBuildMode (
+                copy *.dll IL\*.dll
+                ren *.dll *.org
+            ) else (
+                copy $(MSBuildProjectName).dll IL\$(MSBuildProjectName).dll
+                ren $(MSBuildProjectName).dll $(MSBuildProjectName).org
+            )
+            set __Command=!_DebuggerFullPath!
+            set __Command=!__Command! "!CORE_ROOT!\CoreRun.exe"
+            set __Command=!__Command! "!CORE_ROOT!\crossgen2\crossgen2.dll"
+            if defined CompositeBuildMode (
+                set __ReferenceOption=-u
+                set __Command=!__Command! --composite
+                set __Command=!__Command! -o:%21scriptPath%21composite-r2r.dll
+                rem In composite mode, treat all dll's in the test folder as rooting inputs
+                set __Command=!__Command! %25cd%25\IL\*.dll
+            ) else (
+                set __ReferenceOption=-r
+                set __Command=!__Command! %21scriptPath%21\IL\$(MSBuildProjectName).dll
+                set __Command=!__Command! -r:%25cd%25\IL\*.dll
+                set __Command=!__Command! -o:%21scriptPath%21$(MSBuildProjectName).dll
+            )
+            set __Command=!__Command! --targetarch:x64
+            set __Command=!__Command! -O
+            set __Command=!__Command! --inputbubble
+            set __Command=!__Command! %21ExtraCrossGen2Args%21
+            set __Command=!__Command! !__ReferenceOption!:"!CORE_ROOT!\System.*.dll"
+            set __Command=!__Command! !__ReferenceOption!:"!CORE_ROOT!\Microsoft.*.dll"
+            set __Command=!__Command! !__ReferenceOption!:"!CORE_ROOT!\mscorlib.dll"
+            set __Command=!__Command! !__ReferenceOption!:"!CORE_ROOT!\netstandard.dll"
+            echo "Running Crossgen2: !__Command!"
             call !__Command!
             set CrossGen2Status=!ERRORLEVEL!
         )
